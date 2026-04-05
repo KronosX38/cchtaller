@@ -1,0 +1,436 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Usuario {
+  id        String   @id @default(cuid())
+  nombre    String
+  email     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Catalogo {
+  id          String   @id @default(cuid())
+  tipo        String   // marca_moto, tipo_servicio, metodo_pago, estado_orden
+  nombre      String
+  descripcion String?
+  orden       Int      @default(0)
+  activo      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tipo, nombre])
+  @@index([tipo, activo])
+  @@index([orden])
+}
+
+model Sucursal {
+  id        String    @id @default(cuid())
+  nombre    String    @unique  // ← AGREGAR @unique
+  direccion String?
+  telefono  String?
+  esMatriz  Boolean   @default(false)
+  activo    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+   productos       Producto[]
+  mecanicos       Mecanico[]
+  ordenesServicio OrdenServicio[]
+  clientes        Cliente[]
+}
+
+model Cliente {
+  id        String   @id @default(cuid())
+  nombre    String
+  telefono  String   @unique  // ← AGREGAR @unique
+  email     String?
+  direccion String?
+  notas     String?
+  sucursalId String
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sucursal      Sucursal       @relation(fields: [sucursalId], references: [id])
+  motocicletas  Motocicleta[]
+  ordenesServicio OrdenServicio[]
+
+  @@index([sucursalId])
+  @@index([activo])
+}
+
+model Motocicleta {
+  id           String   @id @default(cuid())
+  clienteId    String
+  
+  // Modelo pre-registrado o manual
+  modeloMotoId String?
+  marcaManual  String?
+  modeloManual String?
+  
+  year         Int?
+  placa        String?
+  color        String?
+  numeroSerie  String?
+  cilindrada   String?
+  kilometraje  Int?
+  notas        String?
+  activo       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  cliente         Cliente         @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  modeloMoto      ModeloMoto?     @relation(fields: [modeloMotoId], references: [id])
+  ordenesServicio OrdenServicio[]
+
+  @@unique([clienteId, placa])
+  @@index([clienteId])
+  @@index([modeloMotoId])
+  @@index([activo])
+}
+
+// ============================================
+// CONFIGURACIÓN GENERAL
+// ============================================
+model Configuracion {
+  id                        String   @id @default(cuid())
+  
+  // Notas de venta
+  mostrarDesgloseRepuestos  Boolean  @default(false)
+  
+  // Datos del taller
+  nombreTaller              String   @default("CCH Taller de Motos")
+  direccion                 String?
+  telefono                  String?
+  email                     String?
+  logoUrl                   String?
+  
+  // Garantías
+  diasGarantiaDefault       Int      @default(30)
+  
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+}
+
+// ============================================
+// MARCAS Y MODELOS DE MOTOS
+// ============================================
+model MarcaMoto {
+  id        String   @id @default(cuid())
+  nombre    String   @unique
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  familias  FamiliaMoto[]
+  modelos   ModeloMoto[]
+}
+
+model FamiliaMoto {
+  id        String   @id @default(cuid())
+  marcaId   String
+  nombre    String
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  marca     MarcaMoto   @relation(fields: [marcaId], references: [id])
+  modelos   ModeloMoto[]
+
+  @@unique([marcaId, nombre])
+  @@index([marcaId])
+}
+
+model ModeloMoto {
+  id                      String   @id @default(cuid())
+  marcaId                 String
+  familiaId               String?
+  nombre                  String
+  cilindrada              String?
+  categoria               String?  // semiautomatica, motoneta, urbana, urbana_grande, trabajo
+  
+  // Precios de mantenimiento (ya incluyen repuestos)
+  precioMantenimiento1    Decimal? @db.Decimal(10, 2)
+  precioMantenimiento2    Decimal? @db.Decimal(10, 2)
+  precioMantenimiento3    Decimal? @db.Decimal(10, 2)
+  
+  conGarantia             Boolean  @default(true)
+  diasGarantia            Int      @default(30)
+  
+  activo                  Boolean  @default(true)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  marca                   MarcaMoto      @relation(fields: [marcaId], references: [id])
+  familia                 FamiliaMoto?   @relation(fields: [familiaId], references: [id])
+  motocicletas            Motocicleta[]
+  plantillas              PlantillaServicio[]
+
+  @@unique([marcaId, familiaId, nombre])
+  @@index([marcaId])
+  @@index([familiaId])
+}
+
+// ============================================
+// SERVICIOS Y MANO DE OBRA
+// ============================================
+model ServicioManoObra {
+  id                      String   @id @default(cuid())
+  categoria               String
+  nombre                  String
+  descripcion             String?
+  
+  // Precios base por tipo de moto
+  precioSemiautomatica    Decimal  @db.Decimal(10, 2)
+  precioMontoneta         Decimal  @db.Decimal(10, 2)
+  precioUrbana            Decimal  @db.Decimal(10, 2)
+  precioUrbanaGrande      Decimal  @db.Decimal(10, 2)
+  precioTrabajo           Decimal  @db.Decimal(10, 2)
+  
+  aumentoAnual            Decimal  @db.Decimal(5, 4) @default(0.31)
+  
+  activo                  Boolean  @default(true)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  detallesOrden           OrdenServicioDetalle[]
+
+  @@unique([categoria, nombre])
+  @@index([categoria])
+  @@index([activo])
+}
+
+// ============================================
+// PLANTILLAS DE SERVICIO
+// ============================================
+model PlantillaServicio {
+  id                String   @id @default(cuid())
+  modeloMotoId      String?
+  nombre            String
+  descripcion       String?
+  precioVenta       Decimal  @db.Decimal(10, 2)
+  
+  activo            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  modeloMoto        ModeloMoto?              @relation(fields: [modeloMotoId], references: [id])
+  items             PlantillaServicioItem[]
+  ordenesServicio   OrdenServicio[]
+
+  @@index([modeloMotoId])
+  @@index([activo])
+}
+
+model PlantillaServicioItem {
+  id              String   @id @default(cuid())
+  plantillaId     String
+  productoId      String
+  cantidad        Int      @default(1)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  plantilla       PlantillaServicio @relation(fields: [plantillaId], references: [id], onDelete: Cascade)
+  producto        Producto          @relation(fields: [productoId], references: [id])
+
+  @@index([plantillaId])
+  @@index([productoId])
+}
+
+// ============================================
+// INVENTARIO
+// ============================================
+model Producto {
+  id                String   @id @default(cuid())
+  codigo            String?  @unique
+  nombre            String
+  descripcion       String?
+  categoria         String
+  marca             String?
+  
+  // Inventario
+  stockMinimo       Int      @default(5)
+  stockActual       Int      @default(0)
+  
+  // Precios
+  precioCompra      Decimal  @db.Decimal(10, 2)
+  precioVenta       Decimal  @db.Decimal(10, 2)
+  
+  sucursalId        String?
+  
+  activo            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  sucursal          Sucursal?                   @relation(fields: [sucursalId], references: [id])
+  repuestos         OrdenServicioRepuesto[]
+  plantillaItems    PlantillaServicioItem[]
+
+  @@index([categoria])
+  @@index([sucursalId])
+  @@index([activo])
+}
+
+// ============================================
+// MECÁNICOS
+// ============================================
+model Mecanico {
+  id                  String   @id @default(cuid())
+  nombre              String
+  telefono            String?
+  email               String?
+  sucursalId          String?
+  porcentajeComision  Decimal? @db.Decimal(5, 2)
+  
+  activo              Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  sucursal            Sucursal?       @relation(fields: [sucursalId], references: [id])
+  ordenesServicio     OrdenServicio[]
+
+  @@index([sucursalId])
+  @@index([activo])
+}
+
+// ============================================
+// ÓRDENES DE SERVICIO
+// ============================================
+model OrdenServicio {
+  id                        String   @id @default(cuid())
+  numero                    String   @unique
+  fecha                     DateTime @default(now())
+  
+  // Relaciones
+  clienteId                 String
+  motocicletaId             String
+  sucursalId                String
+  mecanicoId                String?
+  plantillaServicioId       String?
+  
+  // Tipo de servicio
+  tipoServicio              String
+  
+  // Inspección
+  kilometrajeEntrada        Int?
+  nivelCombustible          String?
+  
+  // Precios
+  subtotalManoObra          Decimal  @db.Decimal(10, 2) @default(0)
+  subtotalRepuestos         Decimal  @db.Decimal(10, 2) @default(0)
+  descuento                 Decimal  @db.Decimal(10, 2) @default(0)
+  subtotal                  Decimal  @db.Decimal(10, 2)
+  iva                       Decimal  @db.Decimal(10, 2)
+  total                     Decimal  @db.Decimal(10, 2)
+  
+  // Pago
+  metodoPago                String?
+  
+  // Garantía
+  conGarantia               Boolean  @default(true)
+  diasGarantia              Int      @default(30)
+  
+  // Estado
+  estadoOrden               String   @default("recibida")
+  
+  // Entrega
+  kilometrajeSalida         Int?
+  fechaEntrega              DateTime?
+  
+  // Observaciones
+  observacionesCliente      String?
+  observacionesMecanico     String?
+  
+  // Próximo servicio
+  proximoServicioKm         Int?
+  proximoServicioFecha      DateTime?
+  
+  // Configuración de impresión
+  mostrarDesglose           Boolean  @default(false)
+  
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  cliente                   Cliente                    @relation(fields: [clienteId], references: [id])
+  motocicleta               Motocicleta                @relation(fields: [motocicletaId], references: [id])
+  sucursal                  Sucursal                   @relation(fields: [sucursalId], references: [id])
+  mecanico                  Mecanico?                  @relation(fields: [mecanicoId], references: [id])
+  plantillaServicio         PlantillaServicio?         @relation(fields: [plantillaServicioId], references: [id])
+  
+  detalles                  OrdenServicioDetalle[]
+  repuestos                 OrdenServicioRepuesto[]
+  checklist                 OrdenServicioChecklist[]
+
+  @@index([clienteId])
+  @@index([motocicletaId])
+  @@index([sucursalId])
+  @@index([mecanicoId])
+  @@index([estadoOrden])
+  @@index([fecha])
+}
+
+model OrdenServicioDetalle {
+  id                    String   @id @default(cuid())
+  ordenServicioId       String
+  servicioManoObraId    String?
+  
+  descripcion           String
+  cantidad              Int      @default(1)
+  precioUnitario        Decimal  @db.Decimal(10, 2)
+  subtotal              Decimal  @db.Decimal(10, 2)
+  
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  ordenServicio         OrdenServicio     @relation(fields: [ordenServicioId], references: [id], onDelete: Cascade)
+  servicioManoObra      ServicioManoObra? @relation(fields: [servicioManoObraId], references: [id])
+
+  @@index([ordenServicioId])
+  @@index([servicioManoObraId])
+}
+
+model OrdenServicioRepuesto {
+  id                String   @id @default(cuid())
+  ordenServicioId   String
+  productoId        String?
+  
+  descripcion       String
+  cantidad          Int
+  precioCompra      Decimal  @db.Decimal(10, 2)
+  precioVenta       Decimal  @db.Decimal(10, 2)
+  subtotal          Decimal  @db.Decimal(10, 2)
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  ordenServicio     OrdenServicio @relation(fields: [ordenServicioId], references: [id], onDelete: Cascade)
+  producto          Producto?     @relation(fields: [productoId], references: [id])
+
+  @@index([ordenServicioId])
+  @@index([productoId])
+}
+
+model OrdenServicioChecklist {
+  id                String   @id @default(cuid())
+  ordenServicioId   String
+  
+  item              String
+  estado            String
+  observacion       String?
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  ordenServicio     OrdenServicio @relation(fields: [ordenServicioId], references: [id], onDelete: Cascade)
+
+  @@index([ordenServicioId])
+}
