@@ -2,12 +2,13 @@
   "name": "crm-taller-motos",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
-  },
+"scripts": {
+  "dev": "next dev --turbopack",
+  "build": "prisma generate && prisma migrate deploy && next build",
+  "start": "next start",
+  "lint": "next lint",
+  "postinstall": "prisma generate"
+},
   "dependencies": {
     "@prisma/client": "5.22.0",
     "clsx": "^2.1.1",
