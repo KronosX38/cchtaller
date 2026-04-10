@@ -43,24 +43,21 @@ export async function PUT(
     const { id } = await context.params
     const body = await request.json()
 
-    const motocicleta = await prisma.motocicleta.update({
-      where: { id },
-      data: {
-        marca: body.marca,
-        modelo: body.modelo,
-        year: body.year ? parseInt(body.year) : null,
-        placa: body.placa || null,
-        color: body.color || null,
-        notas: body.notas || null,
-      },
-      include: {
-        cliente: {
-          select: {
-            nombre: true,
-          },
-        },
-      },
-    })
+const motocicleta = await prisma.motocicleta.update({
+  where: { id },
+  data: {
+    modeloMotoId: body.modeloMotoId || null,
+    marcaManual: body.marcaManual || null,
+    modeloManual: body.modeloManual || null,
+    placa: body.placa || null,
+    year: body.year ? parseInt(body.year) : null,
+    color: body.color || null,
+    numeroSerie: body.numeroSerie || null,
+    cilindrada: body.cilindrada || null,
+    kilometraje: body.kilometraje ? parseInt(body.kilometraje) : null,
+    notas: body.notas || null,
+  }
+})
 
     return NextResponse.json(motocicleta)
   } catch (error) {
