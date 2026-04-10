@@ -63,21 +63,18 @@ export async function POST(request: Request) {
   try {
     const body = await request.json()
 
-    const cliente = await prisma.cliente.create({
-      data: {
-        nombre: body.nombre,
-        telefono: body.telefono,
-        email: body.email || null,
-        direccion: body.direccion || null,
-        fechaNacimiento: body.fechaNacimiento
-          ? new Date(body.fechaNacimiento)
-          : null,
-        sucursalId: body.sucursalId,
-      },
-      include: {
-        sucursal: true,
-      },
-    })
+const cliente = await prisma.cliente.create({
+  data: {
+    nombre: body.nombre,
+    telefono: body.telefono,
+    email: body.email || null,
+    direccion: body.direccion || null,
+    sucursalId: body.sucursalId,
+  },
+  include: {
+    sucursal: true,
+  },
+})
 
     return NextResponse.json(cliente, { status: 201 })
   } catch (error) {
