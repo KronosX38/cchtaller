@@ -41,24 +41,29 @@ export async function POST(request: Request) {
   try {
     const body = await request.json()
 
-    const motocicleta = await prisma.motocicleta.create({
-      data: {
-        clienteId: body.clienteId,
-        marca: body.marca,
-        modelo: body.modelo,
-        year: body.year ? parseInt(body.year) : null,
-        placa: body.placa || null,
-        color: body.color || null,
-        notas: body.notas || null,
-      },
+   const motocicleta = await prisma.motocicleta.create({
+  data: {
+    clienteId: body.clienteId,
+    modeloMotoId: body.modeloMotoId || null,
+    marcaManual: body.marcaManual || null,
+    modeloManual: body.modeloManual || null,
+    placa: body.placa || null,
+    year: body.year ? parseInt(body.year) : null,
+    color: body.color || null,
+    numeroSerie: body.numeroSerie || null,
+    cilindrada: body.cilindrada || null,
+    kilometraje: body.kilometraje ? parseInt(body.kilometraje) : null,
+    notas: body.notas || null,
+  },
+  include: {
+    modeloMoto: {
       include: {
-        cliente: {
-          select: {
-            nombre: true,
-          },
-        },
+        marca: true,
+        familia: true,
       },
-    })
+    },
+  },
+})
 
     return NextResponse.json(motocicleta, { status: 201 })
   } catch (error) {
