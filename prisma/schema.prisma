@@ -356,9 +356,14 @@ model OrdenServicio {
   // Configuración de impresión
   mostrarDesglose           Boolean  @default(false)
   
+  // Firmas digitales
+  firmaRecepcion            String?  @db.Text
+  firmaEntrega              String?  @db.Text
+  
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 
+  // Relaciones
   cliente                   Cliente                    @relation(fields: [clienteId], references: [id])
   motocicleta               Motocicleta                @relation(fields: [motocicletaId], references: [id])
   sucursal                  Sucursal                   @relation(fields: [sucursalId], references: [id])
@@ -368,7 +373,7 @@ model OrdenServicio {
   detalles                  OrdenServicioDetalle[]
   repuestos                 OrdenServicioRepuesto[]
   checklist                 OrdenServicioChecklist[]
-
+  
   @@index([clienteId])
   @@index([motocicletaId])
   @@index([sucursalId])
@@ -433,3 +438,4 @@ model OrdenServicioChecklist {
 
   @@index([ordenServicioId])
 }
+

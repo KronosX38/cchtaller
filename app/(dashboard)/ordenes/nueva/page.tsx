@@ -1,24 +1,17 @@
 // app/(dashboard)/ordenes/nueva/page.tsx
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import {
-  ArrowLeft,
-  Save,
-  Search,
-  Plus,
-  X,
-  Wrench,
-  Package,
-  CheckSquare,
-  AlertCircle
-} from 'lucide-react'
+import { ArrowLeft, Save, AlertCircle, Search, X } from 'lucide-react'
+
 
 interface Cliente {
   id: string
   nombre: string
   telefono: string
+  email?: string
+  direccion?: string
   sucursal?: {
     id: string
     nombre: string
@@ -34,25 +27,24 @@ interface Motocicleta {
     marca: { nombre: string }
     cilindrada?: string
     categoria?: string
-    precioMantenimiento1?: number
   }
   marcaManual?: string
   modeloManual?: string
   placa?: string
+  year?: number
+  color?: string
   kilometraje?: number
 }
 
 interface Mecanico {
   id: string
   nombre: string
-  sucursal?: { nombre: string }
 }
 
 interface Producto {
   id: string
   nombre: string
   codigo?: string
-  categoria: string
   stockActual: number
   precioCompra: number | any
   precioVenta: number | any
@@ -60,8 +52,8 @@ interface Producto {
 
 interface ServicioManoObra {
   id: string
-  categoria: string
   nombre: string
+  categoria: string
   precioSemiautomatica: number
   precioMontoneta: number
   precioUrbana: number
@@ -119,10 +111,22 @@ const ITEMS_CHECKLIST = [
   'Suspensión',
 ]
 
+// Función para formatear dinero
+const formatearDinero = (cantidad: number): string => {
+  return new Intl.NumberFormat('es-MX', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(cantidad)
+}
+
+
 export default function NuevaOrdenPage() {
   const router = useRouter()
+  const firmaRecepcionClienteRef = useRef<HTMLCanvasElement>(null)
+  const firmaRecepcionTallerRef = useRef<HTMLCanvasElement>(null)
 
-  // Estados principales
+  // Estados
+  const [empleadoRecepcionId, setEmpleadoRecepcionId] = useState('')
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null)
   const [motoSeleccionada, setMotoSeleccionada] = useState<Motocicleta | null>(null)
@@ -130,7 +134,14 @@ export default function NuevaOrdenPage() {
   const [productos, setProductos] = useState<Producto[]>([])
   const [serviciosManoObra, setServiciosManoObra] = useState<ServicioManoObra[]>([])
 
-  // Datos de la orden
+  const [busquedaCliente, setBusquedaCliente] = useState('')
+  const [mostrarClientes, setMostrarClientes] = useState(false)
+  const [busquedaServicio, setBusquedaServicio] = useState('')
+  const [mostrarServicios, setMostrarServicios] = useState(false)
+  const [busquedaProducto, setBusquedaProducto] = useState('')
+  const [mostrarProductos, setMostrarProductos] = useState(false)
+
+  const [numeroOrden, setNumeroOrden] = useState('')
   const [tipoServicio, setTipoServicio] = useState('mantenimiento_preventivo')
   const [mecanicoId, setMecanicoId] = useState('')
   const [kilometrajeEntrada, setKilometrajeEntrada] = useState('')
@@ -138,29 +149,40 @@ export default function NuevaOrdenPage() {
   const [metodoPago, setMetodoPago] = useState('efectivo')
   const [observacionesCliente, setObservacionesCliente] = useState('')
   const [observacionesMecanico, setObservacionesMecanico] = useState('')
-  const [mostrarDesglose, setMostrarDesglose] = useState(false)
+  const [numeroServicioCliente, setNumeroServicioCliente] = useState<number>(0)
 
-  // Arrays de detalles
   const [detalles, setDetalles] = useState<DetalleServicio[]>([])
   const [repuestos, setRepuestos] = useState<Repuesto[]>([])
   const [checklist, setChecklist] = useState<ItemChecklist[]>(
     ITEMS_CHECKLIST.map(item => ({ item, estado: 'bueno', observacion: '' }))
   )
 
-  // UI States
-  const [busquedaCliente, setBusquedaCliente] = useState('')
-  const [mostrarClientes, setMostrarClientes] = useState(false)
-  const [busquedaServicio, setBusquedaServicio] = useState('')
-  const [mostrarServicios, setMostrarServicios] = useState(false)
-  const [busquedaProducto, setBusquedaProducto] = useState('')
-  const [mostrarProductos, setMostrarProductos] = useState(false)
+  const [dibujandoCliente, setDibujandoCliente] = useState(false)
+  const [dibujandoTaller, setDibujandoTaller] = useState(false)
+
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  // Cargar datos iniciales
+  // Cargar datos y generar número de orden
   useEffect(() => {
     cargarDatos()
+    generarNumeroOrden()
   }, [])
+
+  const obtenerNumeroServicioCliente = async (clienteId: string) => {
+    try {
+      const res = await fetch(`/api/ordenes?clienteId=${clienteId}`)
+      if (res.ok) {
+        const ordenes = await res.json()
+        setNumeroServicioCliente(ordenes.length + 1)
+      } else {
+        setNumeroServicioCliente(1)
+      }
+    } catch (error) {
+      console.error('Error al obtener servicios del cliente:', error)
+      setNumeroServicioCliente(1)
+    }
+  }
 
   const cargarDatos = async () => {
     try {
@@ -171,28 +193,32 @@ export default function NuevaOrdenPage() {
         fetch('/api/servicios-mano-obra'),
       ])
 
-      if (resClientes.ok) {
-        const data = await resClientes.json()
-        setClientes(data)
-      }
-      if (resMecanicos.ok) {
-        const data = await resMecanicos.json()
-        setMecanicos(data)
-      }
-      if (resProductos.ok) {
-        const data = await resProductos.json()
-        setProductos(data)
-      }
-      if (resServicios.ok) {
-        const data = await resServicios.json()
-        setServiciosManoObra(data)
-      }
+      if (resClientes.ok) setClientes(await resClientes.json())
+      if (resMecanicos.ok) setMecanicos(await resMecanicos.json())
+      if (resProductos.ok) setProductos(await resProductos.json())
+      if (resServicios.ok) setServiciosManoObra(await resServicios.json())
     } catch (error) {
-      console.error('Error al cargar datos:', error)
+      console.error('Error:', error)
     }
   }
 
-  // Filtros de búsqueda
+  const generarNumeroOrden = async () => {
+    try {
+      const res = await fetch('/api/ordenes')
+      if (res.ok) {
+        const ordenes = await res.json()
+        const ultimoNumero = ordenes.length > 0
+          ? parseInt(ordenes[0].numero)
+          : 0
+        setNumeroOrden((ultimoNumero + 1).toString().padStart(4, '0'))
+      } else {
+        setNumeroOrden('0001')
+      }
+    } catch (error) {
+      setNumeroOrden('0001')
+    }
+  }
+
   const clientesFiltrados = clientes.filter(c =>
     c.nombre.toLowerCase().includes(busquedaCliente.toLowerCase()) ||
     c.telefono.includes(busquedaCliente)
@@ -208,27 +234,20 @@ export default function NuevaOrdenPage() {
     p.stockActual > 0
   )
 
-  // Seleccionar cliente
   const seleccionarCliente = (cliente: Cliente) => {
     setClienteSeleccionado(cliente)
-    setMostrarClientes(false)
     setBusquedaCliente(cliente.nombre)
+    setMostrarClientes(false)
 
-    // Si solo tiene una moto, seleccionarla automáticamente
-    if (cliente.motocicletas && cliente.motocicletas.length === 1) {
-      seleccionarMoto(cliente.motocicletas[0])
+    obtenerNumeroServicioCliente(cliente.id)
+
+    if (cliente.motocicletas?.length === 1) {
+      const moto = cliente.motocicletas[0]
+      setMotoSeleccionada(moto)
+      if (moto.kilometraje) setKilometrajeEntrada(moto.kilometraje.toString())
     }
   }
 
-  // Seleccionar moto
-  const seleccionarMoto = (moto: Motocicleta) => {
-    setMotoSeleccionada(moto)
-    if (moto.kilometraje) {
-      setKilometrajeEntrada(moto.kilometraje.toString())
-    }
-  }
-
-  // Calcular precio según categoría de moto
   const calcularPrecioServicio = (servicio: ServicioManoObra): number => {
     if (!motoSeleccionada?.modeloMoto?.categoria) {
       return servicio.precioUrbana * (1 + servicio.aumentoAnual)
@@ -238,107 +257,115 @@ export default function NuevaOrdenPage() {
     let precioBase = servicio.precioUrbana
 
     switch (categoria) {
-      case 'semiautomatica':
-        precioBase = servicio.precioSemiautomatica
-        break
-      case 'motoneta':
-        precioBase = servicio.precioMontoneta
-        break
-      case 'urbana':
-        precioBase = servicio.precioUrbana
-        break
-      case 'urbana_grande':
-        precioBase = servicio.precioUrbanaGrande
-        break
-      case 'trabajo':
-        precioBase = servicio.precioTrabajo
-        break
+      case 'semiautomatica': precioBase = servicio.precioSemiautomatica; break
+      case 'motoneta': precioBase = servicio.precioMontoneta; break
+      case 'urbana': precioBase = servicio.precioUrbana; break
+      case 'urbana_grande': precioBase = servicio.precioUrbanaGrande; break
+      case 'trabajo': precioBase = servicio.precioTrabajo; break
     }
 
     return precioBase * (1 + servicio.aumentoAnual)
   }
 
-  // Agregar servicio de mano de obra
   const agregarServicio = (servicio: ServicioManoObra) => {
     const precio = calcularPrecioServicio(servicio)
-    const nuevoDetalle: DetalleServicio = {
+    setDetalles([...detalles, {
       servicioManoObraId: servicio.id,
       descripcion: servicio.nombre,
       cantidad: 1,
       precioUnitario: precio,
       subtotal: precio,
-    }
-
-    setDetalles([...detalles, nuevoDetalle])
+    }])
     setMostrarServicios(false)
     setBusquedaServicio('')
   }
 
-  // Agregar repuesto
   const agregarRepuesto = (producto: Producto) => {
     const precioVenta = parseFloat(producto.precioVenta.toString())
     const precioCompra = parseFloat(producto.precioCompra.toString())
 
-    const nuevoRepuesto: Repuesto = {
+    setRepuestos([...repuestos, {
       productoId: producto.id,
       nombre: producto.nombre,
       descripcion: producto.nombre,
       cantidad: 1,
-      precioCompra: precioCompra,
-      precioVenta: precioVenta,
+      precioCompra,
+      precioVenta,
       subtotal: precioVenta,
-    }
-
-    setRepuestos([...repuestos, nuevoRepuesto])
+    }])
     setMostrarProductos(false)
     setBusquedaProducto('')
   }
 
-  // Actualizar cantidad de repuesto
-  const actualizarCantidadRepuesto = (index: number, cantidad: number) => {
-    const nuevosRepuestos = [...repuestos]
-    nuevosRepuestos[index].cantidad = cantidad
-    nuevosRepuestos[index].subtotal = cantidad * nuevosRepuestos[index].precioVenta
-    setRepuestos(nuevosRepuestos)
-  }
-
-  // Eliminar servicio
   const eliminarServicio = (index: number) => {
     setDetalles(detalles.filter((_, i) => i !== index))
   }
 
-  // Eliminar repuesto
   const eliminarRepuesto = (index: number) => {
     setRepuestos(repuestos.filter((_, i) => i !== index))
   }
 
-  // Actualizar estado de checklist
-  const actualizarChecklist = (index: number, campo: 'estado' | 'observacion', valor: string) => {
-    const nuevoChecklist = [...checklist]
-    if (campo === 'estado') {
-      nuevoChecklist[index].estado = valor
-    } else {
-      nuevoChecklist[index].observacion = valor
-    }
-    setChecklist(nuevoChecklist)
+  const calcularTotales = () => {
+    const subtotalManoObra = detalles.reduce((sum, d) => sum + d.subtotal, 0)
+    const subtotalRepuestos = repuestos.reduce((sum, r) => sum + r.subtotal, 0)
+    const subtotal = subtotalManoObra + subtotalRepuestos
+    const iva = subtotal * 0.16
+    const total = subtotal + iva
+
+    return { subtotalManoObra, subtotalRepuestos, subtotal, iva, total }
   }
 
-  // Calcular totales
-  const subtotalManoObra = detalles.reduce((sum, d) => sum + d.subtotal, 0)
-  const subtotalRepuestos = repuestos.reduce((sum, r) => sum + r.subtotal, 0)
-  const subtotal = subtotalManoObra + subtotalRepuestos
-  const iva = subtotal * 0.16
-  const total = subtotal + iva
+  // Funciones de firma (canvas)
+  const iniciarDibujo = (e: React.MouseEvent<HTMLCanvasElement>, tipo: 'cliente' | 'taller') => {
+    const canvas = tipo === 'cliente' ? firmaRecepcionClienteRef.current : firmaRecepcionTallerRef.current
+    if (!canvas) return
 
-  // Guardar orden
+    const rect = canvas.getBoundingClientRect()
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    ctx.beginPath()
+    ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top)
+
+    if (tipo === 'cliente') setDibujandoCliente(true)
+    else setDibujandoTaller(true)
+  }
+
+  const dibujar = (e: React.MouseEvent<HTMLCanvasElement>, tipo: 'cliente' | 'taller') => {
+    const dibujando = tipo === 'cliente' ? dibujandoCliente : dibujandoTaller
+    if (!dibujando) return
+
+    const canvas = tipo === 'cliente' ? firmaRecepcionClienteRef.current : firmaRecepcionTallerRef.current
+    if (!canvas) return
+
+    const rect = canvas.getBoundingClientRect()
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top)
+    ctx.strokeStyle = '#000'
+    ctx.lineWidth = 2
+    ctx.stroke()
+  }
+
+  const detenerDibujo = () => {
+    setDibujandoCliente(false)
+    setDibujandoTaller(false)
+  }
+
+  const limpiarFirma = (tipo: 'cliente' | 'taller') => {
+    const canvas = tipo === 'cliente' ? firmaRecepcionClienteRef.current : firmaRecepcionTallerRef.current
+    if (!canvas) return
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+  }
+
   const guardarOrden = async () => {
     if (!clienteSeleccionado || !motoSeleccionada) {
       setError('Debes seleccionar un cliente y una motocicleta')
-      return
-    }
-
-    if (detalles.length === 0 && repuestos.length === 0) {
-      setError('Debes agregar al menos un servicio o repuesto')
       return
     }
 
@@ -346,6 +373,9 @@ export default function NuevaOrdenPage() {
     setError('')
 
     try {
+      const firmaCliente = firmaRecepcionClienteRef.current?.toDataURL() || null
+      const firmaTaller = firmaRecepcionTallerRef.current?.toDataURL() || null
+
       const res = await fetch('/api/ordenes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -363,7 +393,8 @@ export default function NuevaOrdenPage() {
           metodoPago,
           observacionesCliente,
           observacionesMecanico,
-          mostrarDesglose,
+          mostrarDesglose: false,
+          firmaRecepcion: firmaCliente,
         }),
       })
 
@@ -382,28 +413,23 @@ export default function NuevaOrdenPage() {
     }
   }
 
+  const totales = calcularTotales()
+
   return (
-    <div className="max-w-7xl mx-auto space-y-6 pb-20">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => router.push('/ordenes')}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Nueva Orden de Servicio</h1>
-            <p className="text-sm text-gray-500 mt-1">
-              Registra una nueva orden de servicio
-            </p>
-          </div>
-        </div>
+    <div className="min-h-screen bg-[#0d0f12] py-4 px-2 sm:py-8 sm:px-12">
+      {/* Botones superiores - RESPONSIVE */}
+      <div className="max-w-4xl mx-auto mb-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+        <button
+          onClick={() => router.push('/ordenes')}
+          className="flex items-center justify-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Volver
+        </button>
         <button
           onClick={guardarOrden}
           disabled={loading || !clienteSeleccionado || !motoSeleccionada}
-          className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2.5 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center justify-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
         >
           <Save className="w-5 h-5" />
           {loading ? 'Guardando...' : 'Guardar Orden'}
@@ -412,606 +438,683 @@ export default function NuevaOrdenPage() {
 
       {/* Error */}
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
+        <div className="max-w-4xl mx-auto mb-4 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
           <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
           <p className="text-sm text-red-800">{error}</p>
         </div>
       )}
 
-      {/* Sección 1: Cliente y Motocicleta */}
-      <div className="bg-[#1a1d24] rounded-lg border border-gray-700 p-6">
-        <h2 className="text-lg font-semibold text-white mb-4">
-          Cliente y Motocicleta
-        </h2>
+      {/* HOJA DE ORDEN - RESPONSIVE */}
+      <div className="max-w-4xl mx-auto bg-gray shadow-2xl">
+        {/* ENCABEZADO - RESPONSIVE */}
+        <div className="border-b-4 border-black p-4 sm:p-6">
+          <div className="flex flex-col sm:flex-row items-center sm:items-start justify-between mb-4 gap-4">
+            {/* Logo */}
+            <div className="flex items-center gap-3">
+              {/* Ícono naranja */}
+              <div className="w-12 h-12 rounded-lg flex items-center justify-center" style={{ background: '#e85a2b' }}>
+                <img
+                  src="/cch_logo.svg"
+                  alt="CCH Taller Logo"
+                  className="w-full h-full object-contain"
+                />
+              </div>
+              <div>
+                <div className="text-2xl font-bold" style={{ color: '#e85a2b' }}>CCH Taller</div>
+                <div className="text-xs text-gray-600">Sistema CRM</div>
+              </div>
+            </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Buscar cliente */}
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Cliente *
-            </label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                placeholder="Buscar cliente por nombre o teléfono..."
-                value={busquedaCliente}
-                onChange={(e) => {
-                  setBusquedaCliente(e.target.value)
-                  setMostrarClientes(true)
-                }}
-                onFocus={() => setMostrarClientes(true)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-
-              {/* Dropdown de clientes */}
-              {mostrarClientes && busquedaCliente && (
-                <div className="absolute z-10 w-full mt-1 bg-[#1a1d24] border border-gray-700 rounded-lg shadow-lg max-h-60 overflow-auto">
-                  {clientesFiltrados.length === 0 ? (
-                    <div className="p-4 text-sm text-gray-500 text-center">
-                      No se encontraron clientes
-                    </div>
-                  ) : (
-                    clientesFiltrados.map((cliente) => (
-                      <button
-                        key={cliente.id}
-                        onClick={() => seleccionarCliente(cliente)}
-                        className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-0"
-                      >
-                        <div className="font-medium text-gray-900">{cliente.nombre}</div>
-                        <div className="text-sm text-gray-500">{cliente.telefono}</div>
-                        {cliente.motocicletas && cliente.motocicletas.length > 0 && (
-                          <div className="text-xs text-gray-400 mt-1">
-                            {cliente.motocicletas.length} moto(s) registrada(s)
-                          </div>
-                        )}
-                      </button>
-                    ))
-                  )}
+            <div className="text-center sm:text-right">
+              <h1 className="text-lg sm:text-xl font-bold" style={{ color: '#e85a2b' }}>
+                HOJA DE RECEPCIÓN
+              </h1>
+              <div className="text-sm mt-1">
+                <span className="font-semibold">ORDEN DE SERVICIO</span>
+              </div>
+              <div className="text-xl sm:text-2xl font-bold mt-1" style={{ color: '#e85a2b' }}>
+                N° {numeroOrden}
+              </div>
+              {clienteSeleccionado && numeroServicioCliente > 0 && (
+                <div className="text-sm mt-2">
+                  <span className="font-semibold" style={{ color: '#C5A02F' }}>
+                    Servicio #{numeroServicioCliente}
+                  </span>
+                  <span className="text-gray-600"> del cliente</span>
                 </div>
               )}
             </div>
-
-            {clienteSeleccionado && (
-              <div className="mt-2 p-3 bg-blue-50 rounded-lg">
-                <div className="text-sm font-medium text-blue-900">
-                  {clienteSeleccionado.nombre}
-                </div>
-                <div className="text-xs text-blue-700 mt-1">
-                  {clienteSeleccionado.telefono}
-                </div>
-              </div>
-            )}
           </div>
 
-          {/* Seleccionar motocicleta */}
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Motocicleta *
-            </label>
-            {!clienteSeleccionado ? (
-              <div className="p-4 bg-gray-50 rounded-lg text-sm text-gray-500 text-center">
-                Primero selecciona un cliente
-              </div>
-            ) : clienteSeleccionado.motocicletas?.length === 0 ? (
-              <div className="p-4 bg-yellow-50 rounded-lg text-sm text-yellow-800 text-center">
-                Este cliente no tiene motos registradas
-              </div>
-            ) : (
-              <select
-                value={motoSeleccionada?.id || ''}
-                onChange={(e) => {
-                  const moto = clienteSeleccionado.motocicletas?.find(m => m.id === e.target.value)
-                  if (moto) seleccionarMoto(moto)
-                }}
-                className="w-full px-4 py-2 bg-[#0d0f12] border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="">Seleccionar motocicleta...</option>
-                {clienteSeleccionado.motocicletas?.map((moto) => (
-                  <option key={moto.id} value={moto.id}>
-                    {moto.modeloMoto
-                      ? `${moto.modeloMoto.marca.nombre} ${moto.modeloMoto.nombre}`
-                      : `${moto.marcaManual} ${moto.modeloManual}`}
-                    {moto.placa && ` - ${moto.placa}`}
-                  </option>
-                ))}
-              </select>
-            )}
+          <div className="flex flex-col sm:flex-row gap-4 sm:gap-8 text-sm">
+            <div>
+              <span className="font-semibold">Fecha:</span>{' '}
+              <span className="border-b border-gray-400 px-2">
+                {new Date().toLocaleDateString('es-MX')}
+              </span>
+            </div>
+            <div>
+              <span className="font-semibold">Hora:</span>{' '}
+              <span className="border-b border-gray-400 px-2">
+                {new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+          </div>
+        </div>
 
-            {motoSeleccionada && (
-              <div className="mt-2 p-3 bg-green-50 rounded-lg">
-                <div className="text-sm font-medium text-green-900">
-                  {motoSeleccionada.modeloMoto
-                    ? `${motoSeleccionada.modeloMoto.marca.nombre} ${motoSeleccionada.modeloMoto.nombre}`
-                    : `${motoSeleccionada.marcaManual} ${motoSeleccionada.modeloManual}`}
-                </div>
-                <div className="text-xs text-green-700 mt-1 space-x-3">
-                  {motoSeleccionada.placa && <span>Placa: {motoSeleccionada.placa}</span>}
-                  {motoSeleccionada.modeloMoto?.cilindrada && (
-                    <span>{motoSeleccionada.modeloMoto.cilindrada}</span>
+        {/* DATOS DEL CLIENTE - RESPONSIVE: 1 col móvil, 2 col tablet+ */}
+        <div className="border-b-2 border-gray-300 p-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-3 text-sm">
+            {/* Búsqueda de cliente */}
+            <div className="md:col-span-1">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold w-20 sm:w-24" style={{ color: '#56C5F5' }}>Nombre:</span>
+                <div className="flex-1 relative">
+                  <input
+                    type="text"
+                    placeholder="Buscar cliente..."
+                    value={busquedaCliente}
+                    onChange={(e) => {
+                      setBusquedaCliente(e.target.value)
+                      setMostrarClientes(true)
+                    }}
+                    onFocus={() => setMostrarClientes(true)}
+                    className="w-full border-b border-gray-400 px-1 py-1 focus:outline-none focus:border-blue-500 text-white-900 placeholder-gray-400"
+                  />
+
+                  {mostrarClientes && busquedaCliente && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-auto">
+                      {clientesFiltrados.length === 0 ? (
+                        <div className="p-2 text-xs text-gray-500">No se encontraron clientes</div>
+                      ) : (
+                        clientesFiltrados.map(c => (
+                          <button
+                            key={c.id}
+                            onClick={() => seleccionarCliente(c)}
+                            className="w-full text-left px-3 py-2 hover:bg-gray-100 text-xs border-b last:border-0"
+                          >
+                            <div className="font-medium text-gray-900">{c.nombre}</div>
+                            <div className="text-gray-600">{c.telefono}</div>
+                          </button>
+                        ))
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
-            )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="font-semibold w-20 sm:w-24" style={{ color: '#56C5F5' }}>Teléfono:</span>
+              <input
+                type="text"
+                value={clienteSeleccionado?.telefono || ''}
+                readOnly
+                className="flex-1 border-b border-gray-400 px-1 py-1 bg-transparent text-white-900"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="font-semibold w-20 sm:w-24" style={{ color: '#56C5F5' }}>Dirección:</span>
+              <input
+                type="text"
+                value={clienteSeleccionado?.direccion || ''}
+                readOnly
+                className="flex-1 border-b border-gray-400 px-1 py-1 bg-transparent text-white-900"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="font-semibold w-20 sm:w-24" style={{ color: '#56C5F5' }}>E-mail:</span>
+              <input
+                type="text"
+                value={clienteSeleccionado?.email || ''}
+                readOnly
+                className="flex-1 border-b border-gray-400 px-1 py-1 bg-transparent text-white-900"
+              />
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Sección 2: Tipo de Servicio e Inspección */}
-      <div className="bg-[#1a1d24] rounded-lg border border-gray-700 p-6">
-        <h2 className="text-lg font-semibold text-white mb-4">
-          Tipo de Servicio e Inspección
-        </h2>
+        {/* TIPO DE SERVICIO - RESPONSIVE */}
+        <div className="border-b-2 border-gray-300 p-4">
+          <h2 className="font-bold text-center mb-3" style={{ color: '#e85a2b' }}>
+            TIPO DE SERVICIO
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {[
+              { value: 'mantenimiento_preventivo', label: 'a) Mantenimiento Preventivo' },
+              { value: 'reparacion_electrica', label: 'c) Reparación Eléctrica' },
+              { value: 'reparacion_general', label: 'b) Reparación General' },
+              { value: 'diagnostico', label: 'd) Diagnóstico' },
+            ].map(tipo => (
+              <label key={tipo.value} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="tipoServicio"
+                  value={tipo.value}
+                  checked={tipoServicio === tipo.value}
+                  onChange={(e) => setTipoServicio(e.target.value)}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm">{tipo.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Tipo de Servicio
-            </label>
-            <select
-              value={tipoServicio}
-              onChange={(e) => setTipoServicio(e.target.value)}
-              className="w-full px-4 py-2 bg-[#0d0f12] border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="mantenimiento_preventivo">Mantenimiento preventivo</option>
-              <option value="reparacion_general">Reparación general</option>
-              <option value="reparacion_electrica">Reparación eléctrica</option>
-              <option value="diagnostico">Diagnóstico</option>
-            </select>
+        {/* INVENTARIO DE LA UNIDAD - RESPONSIVE */}
+        <div className="border-b-2 border-gray-300 p-4">
+          <h2 className="font-bold text-center mb-3" style={{ color: '#e85a2b' }}>
+            INVENTARIO DE LA UNIDAD
+          </h2>
+
+          {/* Datos de la moto - RESPONSIVE: 1 col móvil, 3 col tablet+ */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-2 text-sm mb-4">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold" style={{ color: '#56C5F5' }}>Modelo:</span>
+              <select
+                value={motoSeleccionada?.id || ''}
+                onChange={(e) => {
+                  const moto = clienteSeleccionado?.motocicletas?.find(m => m.id === e.target.value)
+                  if (moto) {
+                    setMotoSeleccionada(moto)
+                    if (moto.kilometraje) setKilometrajeEntrada(moto.kilometraje.toString())
+                  }
+                }}
+                disabled={!clienteSeleccionado}
+                className="flex-1 border-b border-gray-400 px-1 py-1 text-xs bg-white text-gray-900 disabled:bg-gray-100"
+              >
+                <option value="" className="text-gray-400">Seleccionar...</option>
+                {clienteSeleccionado?.motocicletas?.map(m => (
+                  <option key={m.id} value={m.id} className="text-gray-900">
+                    {m.modeloMoto
+                      ? `${m.modeloMoto.marca.nombre} ${m.modeloMoto.nombre}`
+                      : `${m.marcaManual} ${m.modeloManual}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="font-semibold" style={{ color: '#56C5F5' }}>Año:</span>
+              <input
+                type="text"
+                value={motoSeleccionada?.year || ''}
+                readOnly
+                className="flex-1 border-b border-gray-400 px-1 py-1 bg-transparent text-xs text-white-900"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="font-semibold" style={{ color: '#56C5F5' }}>Placa:</span>
+              <input
+                type="text"
+                value={motoSeleccionada?.placa || ''}
+                readOnly
+                className="flex-1 border-b border-gray-400 px-1 py-1 bg-transparent text-xs text-white-900"
+              />
+            </div>
+            {/* IMAGENES MOTOS */}
+            <div className="col-span-full mt-3 flex justify-center gap-4 py-2 border-t border-gray-200">
+              <div className="text-center">
+                <div className="text-xs text-gray-500 mb-1">Scooter</div>
+                <div className="w-12 h-12 bg-gray-100 rounded">
+                  {/* Tu SVG aquí */}
+                </div>
+              </div>
+
+              <div className="text-center">
+                <div className="text-xs text-gray-500 mb-1">Scooter</div>
+                <div className="w-12 h-12 bg-gray-100 rounded">
+                  {/* Tu SVG aquí */}
+                </div>
+
+              </div>
+              <div className="text-center">
+                <div className="text-xs text-gray-500 mb-1">Scooter</div>
+                <div className="w-12 h-12 bg-gray-100 rounded">
+                  {/* Tu SVG aquí */}
+                </div>
+
+              </div>
+              <div className="text-center">
+                <div className="text-xs text-gray-500 mb-1">Scooter</div>
+                <div className="w-12 h-12 bg-gray-100 rounded">
+                  {/* Tu SVG aquí */}
+                </div>
+              </div>
+            </div>
+
+
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Mecánico Asignado
-            </label>
-            <select
-              value={mecanicoId}
-              onChange={(e) => setMecanicoId(e.target.value)}
-              className="w-full px-4 py-2 bg-[#0d0f12] border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="">Sin asignar</option>
-              {mecanicos.map((mecanico) => (
-                <option key={mecanico.id} value={mecanico.id}>
-                  {mecanico.nombre}
-                  {mecanico.sucursal && ` - ${mecanico.sucursal.nombre}`}
-                </option>
-              ))}
-            </select>
+          {/* Checklist - RESPONSIVE: 1 col móvil, 2 col tablet, 3 col desktop */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-4">
+            {checklist.map((item, index) => (
+              <div key={index} className="text-xs border border-gray-300 p-1 bg-gray">
+                <div className="font-semibold mb-1" style={{ color: '#56C5F5' }}>
+                  {item.item}
+                </div>
+                <div className="flex gap-1">
+                  {['bueno', 'regular', 'malo'].map(estado => (
+                    <label key={estado} className="flex items-center gap-0.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name={`checklist-${index}`}
+                        checked={item.estado === estado}
+                        onChange={() => {
+                          const nuevo = [...checklist]
+                          nuevo[index].estado = estado
+                          setChecklist(nuevo)
+                        }}
+                        className="w-3 h-3"
+                      />
+                      <span className="text-[10px] text-white-900">
+                        {estado === 'bueno' ? 'B' : estado === 'regular' ? 'R' : 'M'}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Kilometraje de Entrada
-            </label>
+          {/* Medidor de Combustible - RESPONSIVE */}
+          <div className="mb-4">
+            <div className="font-semibold text-sm mb-2" style={{ color: '#C5A02F' }}>
+              Nivel de Combustible
+            </div>
+
+            <div className="relative">
+              <div
+                className="h-10 rounded-full"
+                style={{
+                  background: 'linear-gradient(90deg, #ff4444 0%, #ffaa00 25%, #ffff00 50%, #88ff00 75%, #00ff00 100%)'
+                }}
+              />
+
+              <input
+                type="range"
+                min="0"
+                max="4"
+                step="1"
+                value={
+                  nivelCombustible === 'vacio' ? 0 :
+                    nivelCombustible === 'cuarto' ? 1 :
+                      nivelCombustible === 'medio' ? 2 :
+                        nivelCombustible === 'tres_cuartos' ? 3 : 4
+                }
+                onChange={(e) => {
+                  const valor = parseInt(e.target.value)
+                  setNivelCombustible(
+                    valor === 0 ? 'vacio' :
+                      valor === 1 ? 'cuarto' :
+                        valor === 2 ? 'medio' :
+                          valor === 3 ? 'tres_cuartos' : 'lleno'
+                  )
+                }}
+                className="absolute top-0 left-0 w-full h-10 opacity-0 cursor-pointer"
+                style={{ zIndex: 10 }}
+              />
+
+              <div
+                className="absolute top-1/2 transform -translate-y-1/2 -translate-x-1/2 transition-all duration-200 pointer-events-none"
+                style={{
+                  left: nivelCombustible === 'vacio' ? '10%' :
+                    nivelCombustible === 'cuarto' ? '30%' :
+                      nivelCombustible === 'medio' ? '50%' :
+                        nivelCombustible === 'tres_cuartos' ? '70%' : '90%',
+                  zIndex: 5
+                }}
+              >
+                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-black rounded-full flex items-center justify-center shadow-lg border-2 border-white">
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v3.586L7.707 9.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V7z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-between text-xs mt-2 px-1 sm:px-2">
+              <span className="text-gray-600 font-medium">E</span>
+              <span className="text-gray-600">1/4</span>
+              <span className="text-gray-600">1/2</span>
+              <span className="text-gray-600">3/4</span>
+              <span className="text-gray-600 font-medium">F</span>
+            </div>
+          </div>
+
+          {/* Kilometraje - RESPONSIVE */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2">
+            <span className="font-semibold text-sm" style={{ color: '#56C5F5' }}>Kilometraje de Entrada:</span>
             <input
               type="number"
               value={kilometrajeEntrada}
               onChange={(e) => setKilometrajeEntrada(e.target.value)}
-              placeholder="15000"
-              className="w-full px-4 py-2 bg-[#0d0f12] border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full sm:w-32 border-b border-gray-400 px-1 py-1 text-white-900"
             />
           </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Nivel de Combustible
-            </label>
-            <select
-              value={nivelCombustible}
-              onChange={(e) => setNivelCombustible(e.target.value)}
-              className="w-full px-4 py-2 bg-[#0d0f12] border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="vacio">Vacío</option>
-              <option value="cuarto">1/4</option>
-              <option value="medio">1/2</option>
-              <option value="tres_cuartos">3/4</option>
-              <option value="lleno">Lleno</option>
-            </select>
-          </div>
-        </div>
-      </div>
-      {/* Sección 3: Trabajos de Mano de Obra */}
-      <div className="bg-[#1a1d24] rounded-lg border border-gray-700 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Wrench className="w-5 h-5 text-gray-600" />
-            <h2 className="text-lg font-semibold text-white-900">
-              Trabajos de Mano de Obra
-            </h2>
-          </div>
-          <button
-            onClick={() => setMostrarServicios(!mostrarServicios)}
-            className="flex items-center gap-2 text-blue-600 hover:text-blue-700 text-sm font-medium"
-          >
-            <Plus className="w-4 h-4" />
-            Agregar Trabajo
-          </button>
         </div>
 
-        {/* Buscador de servicios */}
-        {mostrarServicios && (
-          <div className="mb-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                placeholder="Buscar servicio..."
-                value={busquedaServicio}
-                onChange={(e) => setBusquedaServicio(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-
-            {/* Lista de servicios */}
-            <div className="mt-2 max-h-60 overflow-auto border border-gray-200 rounded-lg">
-              {serviciosFiltrados.length === 0 ? (
-                <div className="p-4 text-sm text-gray-500 text-center">
-                  No se encontraron servicios
-                </div>
-              ) : (
-                serviciosFiltrados.map((servicio) => {
-                  const precio = calcularPrecioServicio(servicio)
-                  return (
-                    <button
-                      key={servicio.id}
-                      onClick={() => agregarServicio(servicio)}
-                      className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-0"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="font-medium text-white-900">{servicio.nombre}</div>
-                          <div className="text-xs text-gray-500">{servicio.categoria}</div>
-                        </div>
-                        <div className="text-sm font-medium text-gray-900">
-                          ${precio.toFixed(2)}
-                        </div>
-                      </div>
-                    </button>
-                  )
-                })
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Lista de trabajos agregados */}
-        {detalles.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
-            No hay trabajos agregados
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {detalles.map((detalle, index) => (
-              <div
-                key={index}
-                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-              >
-                <div className="flex-1">
-                  <div className="font-medium text-gray-900">{detalle.descripcion}</div>
-                  <div className="text-sm text-gray-500">
-                    Cantidad: {detalle.cantidad} × ${detalle.precioUnitario.toFixed(2)}
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className="text-lg font-semibold text-white-900">
-                    ${detalle.subtotal.toFixed(2)}
-                  </div>
-                  <button
-                    onClick={() => eliminarServicio(index)}
-                    className="text-red-600 hover:text-red-700"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Sección 4: Repuestos */}
-      <div className="bg-[#1a1d24] rounded-lg border border-gray-700 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Package className="w-5 h-5 text-gray-600" />
-            <h2 className="text-lg font-semibold text-white-900">
-              Repuestos Utilizados
-            </h2>
-          </div>
-          <button
-            onClick={() => setMostrarProductos(!mostrarProductos)}
-            className="flex items-center gap-2 text-blue-600 hover:text-blue-700 text-sm font-medium"
-          >
-            <Plus className="w-4 h-4" />
-            Agregar Repuesto
-          </button>
-        </div>
-
-        {/* Buscador de productos */}
-        {mostrarProductos && (
-          <div className="mb-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                placeholder="Buscar repuesto..."
-                value={busquedaProducto}
-                onChange={(e) => setBusquedaProducto(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-
-            {/* Lista de productos */}
-            <div className="mt-2 max-h-60 overflow-auto border border-gray-200 rounded-lg">
-              {productosFiltrados.length === 0 ? (
-                <div className="p-4 text-sm text-gray-500 text-center">
-                  {busquedaProducto
-                    ? 'No se encontraron productos'
-                    : 'Escribe para buscar productos'}
-                </div>
-              ) : (
-                productosFiltrados.map((producto) => (
-                  <button
-                    key={producto.id}
-                    onClick={() => agregarRepuesto(producto)}
-                    className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-0"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium text-gray-900">{producto.nombre}</div>
-                        <div className="text-xs text-gray-500">
-                          {producto.codigo && `${producto.codigo} • `}
-                          Stock: {producto.stockActual}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm font-medium text-gray-900">
-                          ${parseFloat(producto.precioVenta.toString()).toFixed(2)}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          Costo: ${parseFloat(producto.precioCompra.toString()).toFixed(2)}
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Lista de repuestos agregados */}
-        {repuestos.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
-            No hay repuestos agregados
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {repuestos.map((repuesto, index) => (
-              <div
-                key={index}
-                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-              >
-                <div className="flex-1">
-                  <div className="font-medium text-gray-900">{repuesto.nombre}</div>
-                  <div className="text-sm text-gray-500">
-                    ${repuesto.precioVenta.toFixed(2)} c/u
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <input
-                    type="number"
-                    min="1"
-                    value={repuesto.cantidad}
-                    onChange={(e) =>
-                      actualizarCantidadRepuesto(index, parseInt(e.target.value) || 1)
-                    }
-                    className="w-20 px-3 py-1 border border-gray-300 rounded text-center focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                  <div className="text-lg font-semibold text-white-900 w-24 text-right">
-                    ${repuesto.subtotal.toFixed(2)}
-                  </div>
-                  <button
-                    onClick={() => eliminarRepuesto(index)}
-                    className="text-red-600 hover:text-red-700"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Sección 5: Checklist Visual */}
-      <div className="bg-[#1a1d24] rounded-lg border border-gray-700 p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <CheckSquare className="w-5 h-5 text-gray-600" />
-          <h2 className="text-lg font-semibold text-white-900">
-            Inspección Visual
+        {/* TÉCNICO Y OBSERVACIONES - RESPONSIVE */}
+        <div className="border-b-2 border-gray-300 p-4">
+          <h2 className="font-bold text-center mb-3" style={{ color: '#C5A02F' }}>
+            TÉCNICO Y OBSERVACIONES
           </h2>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {checklist.map((item, index) => (
-            <div key={index} className="border border-gray-200 rounded-lg p-3">
-              <div className="font-medium text-sm text-gray-900 mb-2">
-                {item.item}
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => actualizarChecklist(index, 'estado', 'bueno')}
-                  className={`flex-1 px-3 py-1.5 rounded text-xs font-medium transition-colors ${item.estado === 'bueno'
-                    ? 'bg-green-100 text-green-800 border border-green-300'
-                    : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'
-                    }`}
-                >
-                  Bueno
-                </button>
-                <button
-                  onClick={() => actualizarChecklist(index, 'estado', 'regular')}
-                  className={`flex-1 px-3 py-1.5 rounded text-xs font-medium transition-colors ${item.estado === 'regular'
-                    ? 'bg-yellow-100 text-yellow-800 border border-yellow-300'
-                    : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'
-                    }`}
-                >
-                  Regular
-                </button>
-                <button
-                  onClick={() => actualizarChecklist(index, 'estado', 'malo')}
-                  className={`flex-1 px-3 py-1.5 rounded text-xs font-medium transition-colors ${item.estado === 'malo'
-                    ? 'bg-red-100 text-red-800 border border-red-300'
-                    : 'bg-gray-50 text-gray-600 border border-gray-200 hover:bg-gray-100'
-                    }`}
-                >
-                  Malo
-                </button>
-              </div>
-              {item.estado !== 'bueno' && (
-                <input
-                  type="text"
-                  placeholder="Observaciones..."
-                  value={item.observacion || ''}
-                  onChange={(e) => actualizarChecklist(index, 'observacion', e.target.value)}
-                  className="w-full mt-2 px-2 py-1 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Sección 6: Observaciones y Configuración */}
-      <div className="bg-[#1a1d24] rounded-lg border border-gray-700 p-6">
-        <h2 className="text-lg font-semibold text-white mb-4">
-          Observaciones y Configuración
-        </h2>
-
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Observaciones del Cliente
-            </label>
-            <textarea
-              value={observacionesCliente}
-              onChange={(e) => setObservacionesCliente(e.target.value)}
-              rows={3}
-              placeholder="Comentarios o solicitudes especiales del cliente..."
-              className="w-full px-4 py-2 bg-[#0d0f12] border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Observaciones del Mecánico
-            </label>
-            <textarea
-              value={observacionesMecanico}
-              onChange={(e) => setObservacionesMecanico(e.target.value)}
-              rows={3}
-              placeholder="Notas técnicas o hallazgos durante la inspección..."
-              className="w-full px-4 py-2 bg-[#0d0f12] border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Método de Pago
-              </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-sm">
+              <span className="font-semibold" style={{ color: '#56C5F5' }}>Técnico Recep.:</span>
               <select
-                value={metodoPago}
-                onChange={(e) => setMetodoPago(e.target.value)}
-                className="w-full px-4 py-2 bg-[#0d0f12] border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                value={mecanicoId}
+                onChange={(e) => setMecanicoId(e.target.value)}
+                className="flex-1 border-b border-gray-400 px-1 py-1 bg-white text-xs text-gray-900"
               >
-                <option value="efectivo">Efectivo</option>
-                <option value="tarjeta_debito">Tarjeta de débito</option>
-                <option value="tarjeta_credito">Tarjeta de crédito</option>
-                <option value="transferencia">Transferencia</option>
+                <option value="" className="text-gray-400">Sin asignar</option>
+                {mecanicos.map(m => (
+                  <option key={m.id} value={m.id} className="text-gray-900">{m.nombre}</option>
+                ))}
               </select>
             </div>
 
-            <div className="flex items-center">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={mostrarDesglose}
-                  onChange={(e) => setMostrarDesglose(e.target.checked)}
-                  className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                />
-                <div>
-                  <div className="text-sm font-medium text-white-900">
-                    Mostrar desglose de repuestos en la nota
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    Por defecto solo se muestra el total del servicio
-                  </div>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-sm">
+              <span className="font-semibold" style={{ color: '#56C5F5' }}>Método de Pago:</span>
+              <select
+                value={metodoPago}
+                onChange={(e) => setMetodoPago(e.target.value)}
+                className="flex-1 border-b border-gray-400 px-1 py-1 bg-white text-xs text-gray-900"
+              >
+                <option value="efectivo">Efectivo</option>
+                <option value="tarjeta_debito">Tarjeta débito</option>
+                <option value="tarjeta_credito">Tarjeta crédito</option>
+                <option value="transferencia">Transferencia</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="mb-3">
+            <div className="font-semibold text-sm mb-1" style={{ color: '#56C5F5' }}>
+              Comentarios del Cliente:
+            </div>
+            <textarea
+              value={observacionesCliente}
+              onChange={(e) => setObservacionesCliente(e.target.value)}
+              rows={2}
+              className="w-full border border-gray-400 rounded px-2 py-1 text-sm resize-none text-white-900 placeholder-gray-400"
+              placeholder="Observaciones o solicitudes del cliente..."
+            />
+          </div>
+
+          <div>
+            <div className="font-semibold text-sm mb-1" style={{ color: '#56C5F5' }}>
+              Observaciones del Técnico:
+            </div>
+            <textarea
+              value={observacionesMecanico}
+              onChange={(e) => setObservacionesMecanico(e.target.value)}
+              rows={2}
+              className="w-full border border-gray-400 rounded px-2 py-1 text-sm resize-none text-white-900 placeholder-gray-400"
+              placeholder="Notas técnicas o hallazgos..."
+            />
+          </div>
+        </div>
+
+        {/* SERVICIOS Y REPUESTOS - RESPONSIVE: stack vertical en móvil */}
+        <div className="border-b-2 border-gray-300 p-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Servicios */}
+            <div>
+              <div className="font-semibold text-sm mb-2 flex items-center justify-between">
+                <span style={{ color: '#C5A02F' }}>Trabajos:</span>
+                <button
+                  onClick={() => setMostrarServicios(!mostrarServicios)}
+                  className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                >
+                  <Search className="w-3 h-3" />
+                  {mostrarServicios ? 'Cerrar' : 'Buscar'}
+                </button>
+              </div>
+
+              {mostrarServicios && (
+                <div className="mb-2 relative">
+                  <input
+                    type="text"
+                    placeholder="Buscar servicio..."
+                    value={busquedaServicio}
+                    onChange={(e) => setBusquedaServicio(e.target.value)}
+                    className="w-full text-xs border border-gray-400 rounded px-2 py-1 text-white-900 placeholder-gray-400"
+                  />
+                  {busquedaServicio && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-32 overflow-auto">
+                      {serviciosFiltrados.length === 0 ? (
+                        <div className="p-2 text-xs text-gray-500">No se encontraron servicios</div>
+                      ) : (
+                        serviciosFiltrados.map(s => {
+                          const precio = calcularPrecioServicio(s)
+                          return (
+                            <button
+                              key={s.id}
+                              onClick={() => agregarServicio(s)}
+                              className="w-full text-left px-2 py-1 hover:bg-gray-100 text-xs border-b last:border-0"
+                            >
+                              <div className="font-medium text-gray-900">{s.nombre}</div>
+                              <div className="text-gray-600">${formatearDinero(precio)}</div>
+                            </button>
+                          )
+                        })
+                      )}
+                    </div>
+                  )}
                 </div>
-              </label>
+              )}
+
+              <div className="space-y-1">
+                {detalles.map((d, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs p-1 rounded" style={{ background: '#e4c5bb' }}>
+                    <span className="flex-1 truncate" style={{ color: '#131313' }}>{d.descripcion}</span>
+                    <span className="font-semibold ml-2" style={{ color: '#e85a2b' }}>${formatearDinero(d.subtotal)}</span>
+                    <button
+                      onClick={() => eliminarServicio(i)}
+                      className="ml-1 text-red-600 hover:text-red-700"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+                {detalles.length === 0 && (
+                  <div className="text-xs text-gray-400 italic">Sin trabajos</div>
+                )}
+              </div>
+            </div>
+
+            {/* Repuestos */}
+            <div>
+              <div className="font-semibold text-sm mb-2 flex items-center justify-between">
+                <span style={{ color: '#56C5F5' }}>Repuestos:</span>
+                <button
+                  onClick={() => setMostrarProductos(!mostrarProductos)}
+                  className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                >
+                  <Search className="w-3 h-3" />
+                  {mostrarProductos ? 'Cerrar' : 'Buscar'}
+                </button>
+              </div>
+
+              {mostrarProductos && (
+                <div className="mb-2 relative">
+                  <input
+                    type="text"
+                    placeholder="Buscar repuesto..."
+                    value={busquedaProducto}
+                    onChange={(e) => setBusquedaProducto(e.target.value)}
+                    className="w-full text-xs border border-gray-400 rounded px-2 py-1 text-white-900 placeholder-gray-400"
+                  />
+                  {busquedaProducto && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-32 overflow-auto">
+                      {productosFiltrados.length === 0 ? (
+                        <div className="p-2 text-xs text-gray-500">No se encontraron productos</div>
+                      ) : (
+                        productosFiltrados.map(p => (
+                          <button
+                            key={p.id}
+                            onClick={() => agregarRepuesto(p)}
+                            className="w-full text-left px-2 py-1 hover:bg-gray-100 text-xs border-b last:border-0"
+                          >
+                            <div className="font-medium text-gray-900">{p.nombre}</div>
+                            <div className="text-gray-600">
+                              ${formatearDinero(parseFloat(p.precioVenta.toString()))} • Stock: {p.stockActual}
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-1">
+                {repuestos.map((r, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs p-1 rounded" style={{ background: '#e4c5bb' }}>
+                    <span className="flex-1 truncate" style={{ color: '#131313' }}>{r.nombre} (x{r.cantidad})</span>
+                    <span className="font-semibold ml-2" style={{ color: '#e85a2b' }}>${formatearDinero(r.subtotal)}</span>
+                    <button
+                      onClick={() => eliminarRepuesto(i)}
+                      className="ml-1 text-red-600 hover:text-red-700"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+                {repuestos.length === 0 && (
+                  <div className="text-xs text-gray-400 italic">Sin repuestos</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Totales */}
+          <div className="mt-3 pt-3 border-t border-gray-300">
+            <div className="flex justify-end">
+              <div className="space-y-1 min-w-[200px]">
+                <div className="flex justify-between gap-4 text-sm">
+                  <span style={{ color: '#56C5F5' }}>Subtotal:</span>
+                  <span className="font-semibold text-white-900">${formatearDinero(totales.subtotal)}</span>
+                </div>
+                <div className="flex justify-between gap-4 text-sm">
+                  <span style={{ color: '#56C5F5' }}>IVA (16%):</span>
+                  <span className="font-semibold text-white-900">${formatearDinero(totales.iva)}</span>
+                </div>
+                <div className="flex justify-between gap-4 text-base border-t border-gray-400 pt-1">
+                  <span className="font-bold" style={{ color: '#C5A02F' }}>TOTAL:</span>
+                  <span className="font-bold" style={{ color: '#e85a2b' }}>
+                    ${formatearDinero(totales.total)}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Sección 7: Resumen de Costos */}
-      <div className="bg-[#1a1d24] rounded-lg border border-gray-700 p-6">
-        <h2 className="text-lg font-semibold text-white mb-4">
-          Resumen de Costos
-        </h2>
+        {/* FIRMAS DE RECEPCIÓN - RESPONSIVE: 1 col móvil, 2 col tablet+ */}
+        <div className="p-4">
+          <h3 className="font-bold text-center mb-4" style={{ color: '#e85a2b' }}>
+            FIRMAS DE RECEPCIÓN
+          </h3>
 
-        <div className="space-y-3">
-          <div className="flex justify-between text-sm">
-            <span className="text-white-600">Mano de Obra:</span>
-            <span className="font-medium text-gray-900">
-              ${subtotalManoObra.toFixed(2)}
-            </span>
+          <div className="grid grid-cols-2 gap-8">
+            <div>
+              <div className="text-center mb-2 font-semibold text-sm" style={{ color: '#56C5F5' }}>
+                Nombre y firma del Cliente
+              </div>
+              <div className="border-2 border-gray-400 rounded overflow-hidden">
+                <canvas
+                  ref={firmaRecepcionClienteRef}
+                  width={450}
+                  height={100}
+                  className="bg-white cursor-crosshair"
+                  onMouseDown={(e) => iniciarDibujo(e, 'cliente')}
+                  onMouseMove={(e) => dibujar(e, 'cliente')}
+                  onMouseUp={detenerDibujo}
+                  onMouseLeave={detenerDibujo}
+                />
+              </div>
+              {/* NOMBRE AUTO-RELLENADO */}
+              <div className="mt-2 text-center text-sm font-medium border-b border-gray-400 px-1 py-1" style={{ color: '#56C5F5' }}>
+                {clienteSeleccionado?.nombre || '___________________________'}
+              </div>
+              <button
+                onClick={() => limpiarFirma('cliente')}
+                className="text-xs text-white-600 hover:underline mt-1 block mx-auto"
+              >
+                Limpiar firma
+              </button>
+            </div>
+
+            <div>
+              <div className="text-center mb-2 font-semibold text-sm" style={{ color: '#56C5F5' }}>
+                Nombre y firma del Centro de Servicio
+              </div>
+              <div className="border-2 border-gray-400 rounded overflow-hidden">
+                <canvas
+                  ref={firmaRecepcionTallerRef}
+                  width={450}
+                  height={100}
+                  className="bg-white cursor-crosshair w-full max-w-full"
+                  style={{ height: '100px' }}
+                  onMouseDown={(e) => iniciarDibujo(e, 'taller')}
+                  onMouseMove={(e) => dibujar(e, 'taller')}
+                  onMouseUp={detenerDibujo}
+                  onMouseLeave={detenerDibujo}
+                />
+              </div>
+
+              {/* SELECTOR DE EMPLEADO */}
+              <select
+                value={empleadoRecepcionId}
+                onChange={(e) => setEmpleadoRecepcionId(e.target.value)}
+                className="mt-2 w-full text-sm border-b border-gray-400 px-1 py-1 text-center " style={{ color: '#56C5F5' }}
+              >
+                <option style={{ background: '#030708' }} value="">Seleccionar empleado...</option>
+                {mecanicos.map(m => (
+                  <option style={{ background: '#030708' }} key={m.id} value={m.id} >{m.nombre}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => limpiarFirma('taller')}
+                className="text-xs text-white-600 hover:underline mt-1 block mx-auto"
+              >
+                Limpiar firma
+              </button>
+            </div>
           </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-white-600">Repuestos:</span>
-            <span className="font-medium text-gray-900">
-              ${subtotalRepuestos.toFixed(2)}
-            </span>
+
+          {/* Términos */}
+          <div className="mt-4 text-xs text-white-600 border-t border-gray-300 pt-3">
+            <p className="font-semibold mb-1">ACEPTO QUE:</p>
+            <p>1) Revisé las condiciones de mi motocicleta.</p>
+            <p>2) Me explicaron las actividades realizadas en el servicio y/o reparación.</p>
+            <p>3) Recibí información para el siguiente servicio preventivo de la motocicleta.</p>
           </div>
-          <div className="flex justify-between text-sm border-t border-gray-200 pt-3">
-            <span className="text-white-600">Subtotal:</span>
-            <span className="font-medium text-gray-900">${subtotal.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-white-600">IVA (16%):</span>
-            <span className="font-medium text-gray-900">${iva.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between text-lg font-bold border-t-2 border-gray-300 pt-3">
-            <span className="text-white-900">Total:</span>
-            <span className="text-blue-600">${total.toFixed(2)}</span>
-          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="bg-gray p-3 text-center text-xs text-white-600 " >
+          <p className="font-semibold">CCH Taller de motos</p>
+          <p>Matriz: Calle 187-I 551 entre 104 y 106 • Fracc. Santa Cruz Palomeque</p>
+          <p>Suc. Santa Cruz: (999) 162 65 94 • Suc. Caucel: (999) 140 47 55</p>
         </div>
       </div>
 
-      {/* Botón fijo inferior */}
-      <div className="fixed bottom-0 left-0 right-0 bg-[#1a1d24] border-t border-gray-200 p-4 shadow-lg md:left-64">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="text-sm text-white-600">
-            Total de la orden: <span className="text-xl font-bold text-blue-600 ml-2">${total.toFixed(2)}</span>
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={() => router.push('/ordenes')}
-              className="px-6 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={guardarOrden}
-              disabled={loading || !clienteSeleccionado || !motoSeleccionada}
-              className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2.5 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Save className="w-5 h-5" />
-              {loading ? 'Guardando...' : 'Guardar Orden'}
-            </button>
-          </div>
-        </div>
+      {/* Botón guardar fijo - RESPONSIVE */}
+      <div className="max-w-4xl mx-auto mt-4 mb-4 print:hidden">
+        <button
+          onClick={guardarOrden}
+          disabled={loading || !clienteSeleccionado || !motoSeleccionada}
+          className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {loading ? 'Guardando orden...' : 'GUARDAR ORDEN DE SERVICIO'}
+        </button>
       </div>
     </div>
   )
